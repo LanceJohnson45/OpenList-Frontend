@@ -1,14 +1,66 @@
 import { Center, VStack, Icon, Text } from "@hope-ui/solid"
 import { Motion } from "solid-motionone"
 import { useContextMenu } from "solid-contextmenu"
-import { batch, Show } from "solid-js"
+import {
+  batch,
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  Show,
+} from "solid-js"
 import { CenterLoading, LinkWithPush, ImageWithError } from "~/components"
-import { usePath, useRouter, useUtil } from "~/hooks"
-import { checkboxOpen, getMainColor, local, selectIndex } from "~/store"
+import { useLink, usePath, useRouter, useUtil } from "~/hooks"
+import {
+  checkboxOpen,
+  getMainColor,
+  local,
+  objStore,
+  selectIndex,
+} from "~/store"
 import { ObjType, StoreObj } from "~/types"
 import { bus, hoverColor } from "~/utils"
 import { getIconByObj } from "~/utils/icon"
 import { ItemCheckbox, useSelectWithMouse } from "./helper"
+
+const maxConcurrentThumbnailLoads = 5
+let activeThumbnailLoads = 0
+const pendingThumbnailLoads: Array<() => void> = []
+
+const pumpThumbnailQueue = () => {
+  while (
+    activeThumbnailLoads < maxConcurrentThumbnailLoads &&
+    pendingThumbnailLoads.length > 0
+  ) {
+    pendingThumbnailLoads.shift()?.()
+  }
+}
+
+const queueThumbnailLoad = (start: (release: () => void) => void) => {
+  let started = false
+  let canceled = false
+  let released = false
+  const release = () => {
+    if (!started || released) return
+    released = true
+    activeThumbnailLoads = Math.max(0, activeThumbnailLoads - 1)
+    pumpThumbnailQueue()
+  }
+  const run = () => {
+    if (canceled) return
+    started = true
+    activeThumbnailLoads += 1
+    start(release)
+  }
+  pendingThumbnailLoads.push(run)
+  pumpThumbnailQueue()
+  return () => {
+    canceled = true
+    const index = pendingThumbnailLoads.indexOf(run)
+    if (index >= 0) pendingThumbnailLoads.splice(index, 1)
+    release()
+  }
+}
 
 export const GridItem = (props: { obj: StoreObj; index: number }) => {
   const { isHide } = useUtil()
@@ -25,8 +77,41 @@ export const GridItem = (props: { obj: StoreObj; index: number }) => {
   )
   const { show } = useContextMenu({ id: 1 })
   const { pushHref, to } = useRouter()
+  const { rawLink } = useLink()
   const { openWithDoubleClick, toggleWithClick, restoreSelectionCache } =
     useSelectWithMouse()
+  const previewSrc = createMemo(() => {
+    if (props.obj.thumb) return props.obj.thumb
+    if (props.obj.type === ObjType.IMAGE) return rawLink(props.obj)
+    if (props.obj.type !== ObjType.VIDEO) return ""
+    const ext = props.obj.name.lastIndexOf(".")
+    if (ext <= 0) return ""
+    const base = props.obj.name.slice(0, ext).toLowerCase()
+    const cover = objStore.objs.find((obj) => {
+      const name = obj.name.toLowerCase()
+      return (
+        obj.type === ObjType.IMAGE &&
+        (name === `${base}.jpg` || name === `${base}.jpeg`)
+      )
+    })
+    return cover ? rawLink(cover) : ""
+  })
+  const [queuedPreviewSrc, setQueuedPreviewSrc] = createSignal("")
+  let releasePreviewLoad = () => {}
+  createEffect(() => {
+    const src = previewSrc()
+    releasePreviewLoad()
+    releasePreviewLoad = () => {}
+    setQueuedPreviewSrc("")
+    if (!src) return
+    releasePreviewLoad = queueThumbnailLoad((release) => {
+      releasePreviewLoad = release
+      setQueuedPreviewSrc(src)
+    })
+  })
+  onCleanup(() => {
+    releasePreviewLoad()
+  })
   return (
     <Motion.div
       initial={{ opacity: 0, scale: 0.9 }}
@@ -115,17 +200,24 @@ export const GridItem = (props: { obj: StoreObj; index: number }) => {
               }}
             />
           </Show>
-          <Show when={props.obj.thumb} fallback={objIcon}>
-            <ImageWithError
-              maxH="$full"
-              maxW="$full"
-              rounded="$lg"
-              shadow="$md"
+          <Show when={previewSrc()} fallback={objIcon}>
+            <Show
+              when={queuedPreviewSrc()}
               fallback={<CenterLoading size="lg" />}
-              fallbackErr={objIcon}
-              src={props.obj.thumb}
-              loading="lazy"
-            />
+            >
+              <ImageWithError
+                maxH="$full"
+                maxW="$full"
+                rounded="$lg"
+                shadow="$md"
+                fallback={<CenterLoading size="lg" />}
+                fallbackErr={objIcon}
+                src={queuedPreviewSrc()}
+                loading="lazy"
+                onLoad={releasePreviewLoad}
+                onError={releasePreviewLoad}
+              />
+            </Show>
           </Show>
         </Center>
         <Text

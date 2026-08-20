@@ -1,0 +1,6 @@
+.git
+.husky
+node_modules
+dist
+*.tar.gz
+*.zip

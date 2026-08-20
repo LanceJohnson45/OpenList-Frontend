@@ -11,7 +11,8 @@ export const ImageWithError = <C extends ElementType = "img">(
     <Show when={!err()} fallback={props.fallbackErr}>
       <Image
         {...props}
-        onError={() => {
+        onError={(event) => {
+          ;(props.onError as any)?.(event)
           setErr(true)
         }}
       />
