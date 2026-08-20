@@ -1,0 +1,65 @@
+# syntax=docker/dockerfile:1.7
+
+ARG BASE_IMAGE_TAG=base
+
+FROM node:22-alpine AS frontend-builder
+WORKDIR /frontend
+
+RUN corepack enable
+
+COPY --from=frontend-src package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY --from=frontend-src patches ./patches
+RUN corepack prepare pnpm@11.20.0 --activate && pnpm install --frozen-lockfile
+
+COPY --from=frontend-src . ./
+ARG FRONTEND_LITE=false
+RUN if [ "$FRONTEND_LITE" = "true" ]; then pnpm build:lite; else pnpm build; fi
+
+FROM alpine:edge AS backend-builder
+WORKDIR /app/
+
+RUN apk add --no-cache gcc git go musl-dev
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . ./
+COPY --from=frontend-builder /frontend/dist ./public/dist
+
+ARG VERSION=dev
+ARG WEB_VERSION=local
+RUN builtAt="$(date +'%F %T %z')" && \
+    gitCommit="$(git log --pretty=format:%h -1 2>/dev/null || echo unknown)" && \
+    go build -o ./bin/openlist \
+      -ldflags="-w -s \
+      -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.BuiltAt=${builtAt}' \
+      -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.GitAuthor=The OpenList Projects Contributors <noreply@openlist.team>' \
+      -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.GitCommit=${gitCommit}' \
+      -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.Version=${VERSION}' \
+      -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.WebVersion=${WEB_VERSION}'" \
+      -tags=jsoniter .
+
+FROM openlistteam/openlist-base-image:${BASE_IMAGE_TAG}
+LABEL MAINTAINER="OpenList"
+
+ARG INSTALL_ARIA2=false
+ARG USER=openlist
+ARG UID=1001
+ARG GID=1001
+
+WORKDIR /opt/openlist/
+
+RUN addgroup -g ${GID} ${USER} && \
+    adduser -D -u ${UID} -G ${USER} ${USER} && \
+    mkdir -p /opt/openlist/data
+
+COPY --from=backend-builder --chmod=755 --chown=${UID}:${GID} /app/bin/openlist ./
+COPY --chmod=755 --chown=${UID}:${GID} entrypoint.sh /entrypoint.sh
+
+USER ${USER}
+RUN /entrypoint.sh version
+
+ENV UMASK=022 RUN_ARIA2=${INSTALL_ARIA2}
+VOLUME /opt/openlist/data/
+EXPOSE 5244 5245
+CMD ["/entrypoint.sh"]

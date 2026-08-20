@@ -3,6 +3,7 @@ package handles
 import (
 	"testing"
 
+	"github.com/OpenListTeam/OpenList/v4/internal/conf"
 	"github.com/OpenListTeam/OpenList/v4/internal/model"
 )
 
@@ -251,5 +252,26 @@ func TestIsEncrypt(t *testing.T) {
 					got, tt.want, tt.reason)
 			}
 		})
+	}
+}
+
+func TestFindSameNameCoverObj(t *testing.T) {
+	conf.SlicesMap[conf.ImageTypes] = []string{"jpg", "jpeg"}
+	conf.SlicesMap[conf.VideoTypes] = []string{"mp4"}
+
+	cover := &model.Object{Name: "movie.jpg"}
+	byName := map[string]model.Obj{
+		cover.GetName(): cover,
+	}
+
+	got, ok := findSameNameCoverObj(&model.Object{Name: "movie.mp4"}, byName)
+	if !ok {
+		t.Fatal("expected same-name jpg cover")
+	}
+	if got.GetName() != cover.GetName() {
+		t.Fatalf("expected cover %q, got %q", cover.GetName(), got.GetName())
+	}
+	if _, ok := findSameNameCoverObj(&model.Object{Name: "other.mp4"}, byName); ok {
+		t.Fatal("expected no cover for unmatched video")
 	}
 }

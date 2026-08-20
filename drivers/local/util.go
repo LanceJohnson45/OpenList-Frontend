@@ -119,6 +119,21 @@ func (d *Local) thumbCachePath(fullPath string) string {
 	return filepath.Join(d.ThumbCacheFolder, thumbPrefix+utils.GetMD5EncodeStr(fullPath)+".png")
 }
 
+func findSameNameVideoCover(videoPath string) (string, bool) {
+	ext := filepath.Ext(videoPath)
+	if ext == "" {
+		return "", false
+	}
+	base := strings.TrimSuffix(videoPath, ext)
+	for _, coverExt := range []string{".jpg", ".jpeg"} {
+		coverPath := base + coverExt
+		if utils.Exists(coverPath) {
+			return coverPath, true
+		}
+	}
+	return "", false
+}
+
 func (d *Local) removeThumbCache(fullPath string) {
 	thumbPath := d.thumbCachePath(fullPath)
 	if thumbPath == "" {
@@ -129,25 +144,33 @@ func (d *Local) removeThumbCache(fullPath string) {
 
 func (d *Local) getThumb(file model.Obj) (*bytes.Buffer, *string, error) {
 	fullPath := file.GetPath()
+	sourcePath := fullPath
+	fileType := utils.GetFileType(file.GetName())
+	if fileType == conf.VIDEO {
+		if coverPath, ok := findSameNameVideoCover(fullPath); ok {
+			sourcePath = coverPath
+			fileType = conf.IMAGE
+		}
+	}
 	if d.ThumbCacheFolder != "" {
 		// skip if the file is a thumbnail
 		if strings.HasPrefix(file.GetName(), thumbPrefix) {
 			return nil, &fullPath, nil
 		}
-		thumbPath := d.thumbCachePath(fullPath)
+		thumbPath := d.thumbCachePath(sourcePath)
 		if utils.Exists(thumbPath) {
 			return nil, &thumbPath, nil
 		}
 	}
 	var srcBuf *bytes.Buffer
-	if utils.GetFileType(file.GetName()) == conf.VIDEO {
+	if fileType == conf.VIDEO {
 		videoBuf, err := d.GetSnapshot(fullPath)
 		if err != nil {
 			return nil, nil, err
 		}
 		srcBuf = videoBuf
 	} else {
-		imgData, err := os.ReadFile(fullPath)
+		imgData, err := os.ReadFile(sourcePath)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -166,7 +189,7 @@ func (d *Local) getThumb(file model.Obj) (*bytes.Buffer, *string, error) {
 		return nil, nil, err
 	}
 	if d.ThumbCacheFolder != "" {
-		err = os.WriteFile(d.thumbCachePath(fullPath), buf.Bytes(), 0o666)
+		err = os.WriteFile(d.thumbCachePath(sourcePath), buf.Bytes(), 0o666)
 		if err != nil {
 			return nil, nil, err
 		}

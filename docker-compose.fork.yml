@@ -1,0 +1,24 @@
+services:
+  openlist:
+    build:
+      context: .
+      dockerfile: Dockerfile.fork
+      additional_contexts:
+        frontend-src: ../OpenList-Frontend
+      args:
+        BASE_IMAGE_TAG: base
+        FRONTEND_LITE: "false"
+        VERSION: fork
+        WEB_VERSION: local
+    image: openlist-fork:latest
+    container_name: openlist-fork
+    restart: unless-stopped
+    user: "0:0"
+    environment:
+      - UMASK=022
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./data:/opt/openlist/data
+    ports:
+      - "5244:5244"
+      - "5245:5245"

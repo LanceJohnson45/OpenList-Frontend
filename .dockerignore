@@ -1,0 +1,12 @@
+.git
+.github
+.idea
+.vscode
+bin
+build
+data
+dist
+public/dist
+*.log
+*.tar.gz
+*.zip

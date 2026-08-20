@@ -227,8 +227,12 @@ func pagination(objs []model.Obj, req *model.PageReq) (int, []model.Obj) {
 
 func toObjsResp(objs []model.Obj, parent string, encrypt bool) []ObjResp {
 	var resp []ObjResp
+	coverThumbs := fallbackThumbs(objs, parent, encrypt)
 	for _, obj := range objs {
 		thumb, _ := model.GetThumb(obj)
+		if thumb == "" {
+			thumb = coverThumbs[obj.GetName()]
+		}
 		mountDetails, _ := model.GetStorageDetails(obj)
 		resp = append(resp, ObjResp{
 			Name:         obj.GetName(),
@@ -245,6 +249,54 @@ func toObjsResp(objs []model.Obj, parent string, encrypt bool) []ObjResp {
 		})
 	}
 	return resp
+}
+
+func fallbackThumbs(objs []model.Obj, parent string, encrypt bool) map[string]string {
+	thumbs := make(map[string]string)
+	byName := make(map[string]model.Obj, len(objs))
+	for _, obj := range objs {
+		if obj.IsDir() {
+			continue
+		}
+		byName[obj.GetName()] = obj
+	}
+	for _, obj := range objs {
+		if obj.IsDir() {
+			continue
+		}
+		switch utils.GetFileType(obj.GetName()) {
+		case conf.IMAGE:
+			thumbs[obj.GetName()] = fileDownloadURL(obj, parent, encrypt)
+		case conf.VIDEO:
+			if cover, ok := findSameNameCoverObj(obj, byName); ok {
+				thumbs[obj.GetName()] = fileDownloadURL(cover, parent, encrypt)
+			}
+		}
+	}
+	return thumbs
+}
+
+func findSameNameCoverObj(obj model.Obj, byName map[string]model.Obj) (model.Obj, bool) {
+	ext := stdpath.Ext(obj.GetName())
+	if ext == "" {
+		return nil, false
+	}
+	base := strings.TrimSuffix(obj.GetName(), ext)
+	for _, coverExt := range []string{".jpg", ".jpeg"} {
+		if cover, ok := byName[base+coverExt]; ok {
+			return cover, true
+		}
+	}
+	return nil, false
+}
+
+func fileDownloadURL(obj model.Obj, parent string, encrypt bool) string {
+	rawPath := stdpath.Join(parent, obj.GetName())
+	url := "/d" + utils.EncodePath(rawPath, true)
+	if s := common.Sign(obj, parent, encrypt); s != "" {
+		url += "?sign=" + s
+	}
+	return url
 }
 
 type FsGetReq struct {
