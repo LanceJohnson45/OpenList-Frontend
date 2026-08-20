@@ -7,11 +7,9 @@ WORKDIR /frontend
 
 RUN corepack enable
 
-COPY --from=frontend-src package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY --from=frontend-src patches ./patches
+COPY --from=frontend-src . ./
 RUN corepack prepare pnpm@11.20.0 --activate && pnpm install --frozen-lockfile
 
-COPY --from=frontend-src . ./
 ARG FRONTEND_LITE=false
 RUN if [ "$FRONTEND_LITE" = "true" ]; then pnpm build:lite; else pnpm build; fi
 

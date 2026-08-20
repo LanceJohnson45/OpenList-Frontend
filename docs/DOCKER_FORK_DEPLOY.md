@@ -1,8 +1,9 @@
 # Docker Fork Deployment
 
-This repository supports two fork deployment modes:
+This repository supports three fork deployment modes:
 
 - Build on GitHub Actions, then let the server pull the finished image. This is recommended for low-spec servers.
+- Build and push the image from your local machine, then let the server pull the finished image.
 - Build directly from local backend and frontend source. This is useful for local development or powerful servers.
 
 ## Recommended: Server Pulls a Prebuilt Image
@@ -63,6 +64,46 @@ docker compose -f docker-compose.ghcr.yml down
 ```
 
 Do not use `docker compose down -v` unless you intentionally want to remove persisted data.
+
+## Local Build, Push to GHCR
+
+This mode avoids building on the server and also avoids using GitHub Actions. It is a good fit when the fork changes rarely.
+
+Log in to GHCR from your local machine. The token needs `write:packages`:
+
+```bash
+echo '<github-token>' | docker login ghcr.io -u <your-github-username> --password-stdin
+```
+
+Expected local layout:
+
+```text
+/path/to/
+  OpenList/
+  OpenList-Frontend/
+```
+
+Build locally and push to GHCR:
+
+```bash
+cd /path/to/OpenList
+sh scripts/build-push-ghcr.sh ghcr.io/<your-github-username>/openlist-fork:latest linux/amd64
+```
+
+Use `linux/arm64` instead if your server is ARM64.
+
+If your frontend repository is elsewhere:
+
+```bash
+FRONTEND_SRC=/path/to/OpenList-Frontend sh scripts/build-push-ghcr.sh ghcr.io/<your-github-username>/openlist-fork:latest linux/amd64
+```
+
+Then update the server:
+
+```bash
+docker compose -f docker-compose.ghcr.yml pull
+docker compose -f docker-compose.ghcr.yml up -d
+```
 
 ## Local Source Build
 
