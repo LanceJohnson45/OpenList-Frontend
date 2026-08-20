@@ -1,0 +1,14 @@
+services:
+  openlist:
+    image: ${OPENLIST_IMAGE:-ghcr.io/your-github-username/openlist-fork:latest}
+    container_name: openlist-fork
+    restart: unless-stopped
+    user: "0:0"
+    environment:
+      - UMASK=022
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./data:/opt/openlist/data
+    ports:
+      - "5244:5244"
+      - "5245:5245"
